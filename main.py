@@ -9,6 +9,9 @@ from utils.logger import (
     print_database_table,
     console
 )
+from core.client import HTTPClient
+from core.detector import VulnerabilityDetector
+from core.mapper import DatabaseMapper
 
 def main():
     #config cli (menerima input dari terminal)
@@ -25,9 +28,42 @@ def main():
     )
     args = parser.parse_args()
 
-    # print_banner()
+    print_banner()
 
     target_url = args.url
     console.print(f"[cyan][*] Mengonfigurasi target: {target_url}[/cyan]")
 
     #init http client
+    client = HTTPClient()
+    if not client.check_connection(target_url):
+        console.print(
+            "[red][!] Gagal terhubung ke target. Pastikan URL aktif.[/red]"
+        )
+        sys.exit(1)
+
+    #deteksi celah 
+    console.print(
+        "[cyan][*] Menjalankan pemindaian kerentanan SQL Injection...[/cyan]"
+    )
+    detector = VulnerabilityDetector(client)
+    is_vulnerable = detector.scan_parameter(target_url)
+
+    if not is_vulnerable:
+        console.print(
+            "[yellow][-] Pemindaian selesai. Parameter target aman (Tidak"
+            " rentan).[/yellow]"
+        )
+        sys.exit(0)
+
+    console.print(
+        "[green][+] KONFIRMASI: Target rentan terhadap SQL Injection![/green]"
+    )
+
+    #tahan mapping dan ekstaksi data (memanggil mapper)
+    console.print("[cyan][*] Memulai ekstraksi informasi database...[/cyan]")
+    mapper = DatabaseMapper(client)
+    mapper.dump_database(target_url)
+
+
+if __name__ == "__main__":
+  main()
